@@ -1,0 +1,103 @@
+#Step-1 models.py
+  from django.db import models
+
+class SensorData(models.Model):
+    humidity = models.FloatField()
+    temperature = models.FloatField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.timestamp} - Humidity: {self.humidity}, Temperature: {self.temperature}'
+
+#step-2 serializers.py
+from rest_framework import serializers
+from .models import SensorData
+
+class SensorDataSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SensorData
+        fields = ['humidity', 'temperature', 'timestamp']
+
+
+# Step-3 views.py
+from time import sleep
+import serial
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import SensorData
+from .serializers import SensorDataSerializer
+
+class DHT(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            # Open serial port
+            ser = serial.Serial('COM3', 9600, timeout=0.2)
+            sleep(2)  # Allow time for Arduino to initialize
+
+            # Read data from serial port
+            data = ser.readline().decode('utf-8').strip()
+
+            # Close serial port
+            ser.close()
+
+            # Process the data (assuming it's in a format like "humidity,temperature")
+            humidity, temperature = map(float, data.split(','))
+
+            # Save data to database
+            sensor_data = SensorData.objects.create(humidity=humidity, temperature=temperature)
+
+            # Serialize data and return as JSON response
+            serializer = SensorDataSerializer(sensor_data)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+  #step-4 urls.py
+  from django.urls import path
+from .views import DHT
+
+urlpatterns = [
+    path('sensor-data/', DHT.as_view(), name='sensor-data'),
+]
+
+# note- react js code
+import React, { useState, useEffect } from 'react';
+
+const SensorData = () => {
+    const [data, setData] = useState({});
+
+    useEffect(() => {
+        const fetchData = async () => {
+            const response = await fetch('http://your-django-api-url/sensor-data/');
+            const jsonData = await response.json();
+            setData(jsonData);
+        };
+
+        fetchData();
+    }, []);
+
+    return (
+        <div>
+            <h1>Sensor Data</h1>
+            <p>Humidity: {data.humidity}</p>
+            <p>Temperature: {data.temperature}</p>
+        </div>
+    );
+};
+
+export default SensorData;
+
+#app.js
+                                import React from 'react';
+import SensorData from './SensorData';
+
+const App = () => {
+    return (
+        <div>
+            <SensorData />
+        </div>
+    );
+};
+
+export default App;
